@@ -24,7 +24,7 @@ import (
 )
 
 // Version is this client's version, sent in its User-Agent.
-const Version = "1.0.0"
+const Version = "1.1.0"
 
 // The codes a refusal can carry, in Error.Code.
 const (

@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.1.0
+
+Everything an integration does in the console, now over the API:
+
+- Networks: `ListNetworks`, each network's coin, finality, recognised tokens and whether
+  payments are open there.
+- Vaults per customer: `CreateVault` with a `reference`, your own id; the same reference
+  answers the same vault. `ListVaults` finds one by reference, and every vault carries it.
+- References on payments, `reference` on `PaymentRequest`, answered on every payment and its
+  webhooks and filterable; deposits carry their vault's `vault_reference`.
+- `QuotePayment`: what sending would come to, with nothing sent: the rules' answer, whether the
+  vault has it free, and the fee ceiling in the network's coin, at the price now.
+- `CheckAddress`: valid (with its checksum), paid before, approved and from when, a lookalike of
+  an address you have paid or approved, and whether it is a contract.
+- `SpeedUpPayment` and `CancelPayment` for a stuck payment.
+- Webhooks: `ListWebhookEvents`, `ListWebhooks`, `CreateWebhook`, `GetWebhook`,
+  `DeleteWebhook`, `EnableWebhook`, `RollWebhookSecret` and `ResendWebhookDelivery`.
+- `ListRules`; `ListApprovedAddresses`, `ApproveAddress` and `RemoveApprovedAddress`.
+- `RefreshVault` and `GetRefresh`; `ListAudit`.
+
 ## v1.0.1
 
 - The import path is `sotirea.com/sdk/go` from this version: `go get sotirea.com/sdk/go` and

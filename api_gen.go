@@ -49,6 +49,8 @@ type PaymentEvent struct {
 	// The transaction it went out in; null while it waits for approval. After a speed-up or cancel,
 	// the replacement's.
 	TxHash *string `json:"tx_hash"`
+	// Your own id for the payment, as you gave it, or null.
+	Reference *string `json:"reference"`
 }
 
 type DepositEvent struct {
@@ -65,6 +67,8 @@ type DepositEvent struct {
 	To      string `json:"to"`
 	Asset   string `json:"asset"`
 	Amount  string `json:"amount"`
+	// Your own id for the vault it arrived in, or null.
+	VaultReference *string `json:"vault_reference"`
 }
 
 type GasPoolEvent struct {
@@ -85,9 +89,18 @@ type Me struct {
 type Vault struct {
 	ID   int64  `json:"id"`
 	Name string `json:"name"`
+	// Your own id for the vault, as you gave it when opening it, or null.
+	Reference *string `json:"reference"`
 	// Where to pay the vault, one address per network.
 	Addresses []VaultAddress `json:"addresses"`
 	CreatedAt time.Time      `json:"created_at"`
+}
+
+type VaultRequest struct {
+	// What to call the vault, at most 80 characters. Without it, the reference names it.
+	Name string `json:"name,omitempty"`
+	// Your own id for the vault, 1 to 128 characters with no spaces, unique in your organisation.
+	Reference string `json:"reference,omitempty"`
 }
 
 type Balance struct {
@@ -122,13 +135,15 @@ type Deposit struct {
 	State     string  `json:"state"`
 	VaultID   *int64  `json:"vault_id"`
 	VaultName *string `json:"vault_name"`
-	ChainID   string  `json:"chain_id"`
-	ChainName string  `json:"chain_name"`
-	TxHash    string  `json:"tx_hash"`
-	From      string  `json:"from"`
-	To        string  `json:"to"`
-	Asset     string  `json:"asset"`
-	Symbol    string  `json:"symbol"`
+	// Your own id for the vault it arrived in, or null.
+	VaultReference *string `json:"vault_reference"`
+	ChainID        string  `json:"chain_id"`
+	ChainName      string  `json:"chain_name"`
+	TxHash         string  `json:"tx_hash"`
+	From           string  `json:"from"`
+	To             string  `json:"to"`
+	Asset          string  `json:"asset"`
+	Symbol         string  `json:"symbol"`
 	// True for the network's coin and for tokens on Sotirea's recognised list. Any other token's
 	// symbol is whatever its contract calls itself, so do not trust it by name.
 	Recognised bool `json:"recognised"`
@@ -143,6 +158,8 @@ type Deposit struct {
 type Payment struct {
 	// The payment's id: api:<organisation>:<the Idempotency-Key it was sent with>.
 	ID string `json:"id"`
+	// Your own id for the payment, as you gave it, or null.
+	Reference *string `json:"reference"`
 	// requested, awaiting_approval, awaiting_gas, signed, sent, confirmed, failed or stuck. New
 	// statuses may be added: treat one you do not know as still in progress.
 	Status    string `json:"status"`
@@ -187,6 +204,178 @@ type PaymentRequest struct {
 	Asset string `json:"asset,omitempty"`
 	// The network, needed only when the vault is open on more than one.
 	ChainID string `json:"chain_id,omitempty"`
+	// Your own id for the payment, such as an order or payout id: 1 to 128 characters with no spaces.
+	// It comes back on every answer and webhook about the payment, and GET /v1/payments?reference=
+	// finds it. Unlike the Idempotency-Key it need not be unique.
+	Reference string `json:"reference,omitempty"`
+}
+
+type PaymentQuote struct {
+	// allowed, needs_approval, refused (by your rules or the vault's balance) or unavailable (the
+	// network would not price it now).
+	Outcome string `json:"outcome"`
+	// The rule that would refuse or hold it, by its stable name; estimate when the network would not
+	// price it.
+	Rule string `json:"rule,omitempty"`
+	// Why, in words you may show a person.
+	Reason string `json:"reason,omitempty"`
+	// How many people in your organisation would have to approve it.
+	ApprovalsRequired int    `json:"approvals_required,omitempty"`
+	ChainID           string `json:"chain_id,omitempty"`
+	// The most the network fee can cost, in base units of the network's coin, paid from your gas pool,
+	// never from the amount; null when it was not priced. At the network's price now, not held.
+	FeeCeiling  *string `json:"fee_ceiling"`
+	FeeSymbol   string  `json:"fee_symbol,omitempty"`
+	FeeDecimals int     `json:"fee_decimals,omitempty"`
+	// Whether your gas pool on that network holds the fee ceiling now.
+	GasPoolCovers bool `json:"gas_pool_covers"`
+	// The vault's first payment also creates it on the network: its fee is included, with an allowance
+	// for the payment itself.
+	IncludesVaultCreation bool `json:"includes_vault_creation"`
+	// When the network's price was read.
+	QuotedAt time.Time `json:"quoted_at"`
+}
+
+type WebhookEventType struct {
+	// Like payment.confirmed: what a webhook's events list names.
+	Type        string `json:"type"`
+	Description string `json:"description"`
+}
+
+type Webhook struct {
+	ID          int64  `json:"id"`
+	URL         string `json:"url"`
+	Description string `json:"description"`
+	// The event types sent to it.
+	Events []string `json:"events"`
+	// The person or API key that added it.
+	CreatedByName string    `json:"created_by_name"`
+	CreatedAt     time.Time `json:"created_at"`
+	// How many deliveries gave up.
+	Failing int `json:"failing"`
+	// How many deliveries are still being tried.
+	Waiting int `json:"waiting"`
+	// When Sotirea turned it off after failing for 3 days and at least 10 attempts; null while it is
+	// on. Turn it back on with POST /v1/webhooks/{id}/enable.
+	DisabledAt     *time.Time `json:"disabled_at"`
+	DisabledReason string     `json:"disabled_reason"`
+	// While a new secret's grace lasts, deliveries are signed with both secrets until this time.
+	PreviousSecretUntil *time.Time `json:"previous_secret_until"`
+}
+
+type WebhookRequest struct {
+	// An https address on the public internet.
+	URL         string `json:"url"`
+	Description string `json:"description,omitempty"`
+	// The event types to send it, from GET /v1/webhook-events.
+	Events []string `json:"events"`
+}
+
+type NewWebhook struct {
+	Webhook Webhook `json:"webhook"`
+	// The signing secret, whsec_...: verify every delivery with it. Shown once.
+	Secret string `json:"secret"`
+}
+
+type WebhookDetail struct {
+	ID          int64  `json:"id"`
+	URL         string `json:"url"`
+	Description string `json:"description"`
+	// The event types sent to it.
+	Events []string `json:"events"`
+	// The person or API key that added it.
+	CreatedByName string    `json:"created_by_name"`
+	CreatedAt     time.Time `json:"created_at"`
+	// How many deliveries gave up.
+	Failing int `json:"failing"`
+	// How many deliveries are still being tried.
+	Waiting int `json:"waiting"`
+	// When Sotirea turned it off after failing for 3 days and at least 10 attempts; null while it is
+	// on. Turn it back on with POST /v1/webhooks/{id}/enable.
+	DisabledAt     *time.Time `json:"disabled_at"`
+	DisabledReason string     `json:"disabled_reason"`
+	// While a new secret's grace lasts, deliveries are signed with both secrets until this time.
+	PreviousSecretUntil *time.Time `json:"previous_secret_until"`
+	// Its most recent deliveries, newest first.
+	Deliveries []WebhookDelivery `json:"deliveries"`
+}
+
+type Done struct {
+	Done bool `json:"done"`
+}
+
+type WebhookSecretRequest struct {
+	// How long the old secret is still signed with: now, 1h, 24h or 7d.
+	Grace string `json:"grace"`
+}
+
+type Rule struct {
+	// The network, or empty for a rule that applies to every network.
+	ChainID string `json:"chain_id"`
+	// native, a token's contract, or empty for every asset.
+	Asset string `json:"asset"`
+	// open, limited, allowlist or dual_control.
+	Template string `json:"template"`
+	// The most one payment may move, in the asset's smallest unit.
+	MaxPerTransfer string `json:"max_per_transfer,omitempty"`
+	// The most payments may move together within window_seconds.
+	MaxPerWindow  string `json:"max_per_window,omitempty"`
+	WindowSeconds int64  `json:"window_seconds,omitempty"`
+	// A payment of this much or more waits for approval.
+	ApprovalThreshold string `json:"approval_threshold,omitempty"`
+	// How many people must approve a payment that waits.
+	ApprovalsRequired int `json:"approvals_required,omitempty"`
+	// Whether money may go only to approved addresses.
+	AllowlistOnly bool `json:"allowlist_only"`
+	// How long a newly approved address waits before it can be paid; 0 is off.
+	NewAddressWaitSeconds int64 `json:"new_address_wait_seconds"`
+}
+
+type ApprovedAddress struct {
+	// The network, or empty for every network.
+	ChainID string `json:"chain_id"`
+	Address string `json:"address"`
+	Label   string `json:"label"`
+	// When it may first be paid: a newly approved address waits as the rules say.
+	UsableFrom *time.Time `json:"usable_from"`
+}
+
+type ApprovedAddressRequest struct {
+	// The network, or empty for every network.
+	ChainID string `json:"chain_id,omitempty"`
+	Address string `json:"address"`
+	// Who or what it is, as people will read it.
+	Label string `json:"label,omitempty"`
+}
+
+type Refresh struct {
+	// Follow it with GET /v1/refreshes/{id}.
+	ID      string `json:"id"`
+	ChainID string `json:"chain_id"`
+	// requested until the network has answered, then answered; failed if it could not be asked,
+	// expired if it never answered.
+	Status string `json:"status"`
+	// How many addresses it asked about.
+	Targets int `json:"targets"`
+	// How many it found different from what Sotirea had counted.
+	Discrepancies int        `json:"discrepancies"`
+	RequestedAt   time.Time  `json:"requested_at"`
+	CompletedAt   *time.Time `json:"completed_at"`
+}
+
+type AuditEntry struct {
+	ID int64     `json:"id"`
+	At time.Time `json:"at"`
+	// What happened, like payment.requested or api_key.created: a stable name.
+	Action string `json:"action"`
+	// What it happened to, as <kind> <id>.
+	Subject     string `json:"subject"`
+	SubjectName string `json:"subject_name,omitempty"`
+	// Who did it; null when nobody did, such as the platform itself.
+	Actor *AuditActor `json:"actor"`
+	// What a reader needs later, as it was when it happened.
+	Detail json.RawMessage `json:"detail"`
+	IP     string          `json:"ip,omitempty"`
 }
 
 type GasPool struct {
@@ -201,6 +390,48 @@ type GasPool struct {
 	// The level below which your organisation is warned; 0 is off.
 	LowBalance string `json:"low_balance"`
 	Low        bool   `json:"low"`
+}
+
+type AddressCheck struct {
+	// The address, in lower case when it is valid.
+	Address string `json:"address"`
+	ChainID string `json:"chain_id"`
+	// Whether it is an address: 0x and 40 hexadecimal characters, with a correct EIP-55 checksum when
+	// its letters are mixed in case.
+	Valid bool `json:"valid"`
+	// Why it is not valid, in words; absent when it is.
+	Problem string `json:"problem,omitempty"`
+	// Whether your organisation has completed a payment to it on this network.
+	PaidBefore bool `json:"paid_before"`
+	// Whether it is on your organisation's approved list.
+	Approved bool `json:"approved"`
+	// When an approved address may first be paid (a newly approved one waits), or null when it is not
+	// approved.
+	PayableFrom *time.Time `json:"payable_from"`
+	// An address you have paid or approved that begins and ends like this one but is not it, the mark
+	// of address poisoning; null when there is none.
+	LookalikeOf *Lookalike `json:"lookalike_of"`
+	// Whether the address is a contract on this network.
+	HoldsCode bool `json:"holds_code"`
+}
+
+type Network struct {
+	// The network's CAIP-2 id, like eip155:1: what vaults, balances and payments name it by.
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// test or live, the same as your key's.
+	Environment string `json:"environment"`
+	// The network's own coin, the one its fees are paid in from your gas pool.
+	Coin Coin `json:"coin"`
+	// How long a deposit or payment usually takes to be final and counted, in seconds.
+	FinalitySeconds int64 `json:"finality_seconds"`
+	// The same in words: seconds, or about so many minutes.
+	Finality string `json:"finality"`
+	// The tokens Sotirea recognises here. Any other token that arrives is credited too, with
+	// recognised false.
+	Tokens []Token `json:"tokens"`
+	// Whether payments can be sent on this network now. Deposits are received either way.
+	PaymentsOpen bool `json:"payments_open"`
 }
 
 type KeyRef struct {
@@ -223,6 +454,51 @@ type VaultAddress struct {
 	Address   string `json:"address"`
 }
 
+type WebhookDelivery struct {
+	// Resend it with POST /v1/webhooks/{id}/deliveries/{delivery}/resend.
+	ID int64 `json:"id"`
+	// The event's id, the webhook-id header it is sent with: the same on every attempt and resend.
+	EventID string `json:"event_id"`
+	Type    string `json:"type"`
+	// waiting, delivered or failed.
+	Status   string `json:"status"`
+	Attempts int    `json:"attempts"`
+	// The HTTP status your endpoint last answered, or null.
+	LastStatus    *int       `json:"last_status"`
+	LastError     string     `json:"last_error"`
+	LastAttemptAt *time.Time `json:"last_attempt_at"`
+	DeliveredAt   *time.Time `json:"delivered_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+}
+
+type AuditActor struct {
+	ID   int64  `json:"id,omitempty"`
+	Name string `json:"name,omitempty"`
+	// Sotirea's staff, shown without name or address.
+	Staff bool `json:"staff"`
+	// An API key, named by its name.
+	APIKey bool `json:"api_key,omitempty"`
+}
+
+type Lookalike struct {
+	Address string `json:"address"`
+	// paid: an address you have paid; approved: one on your approved list.
+	Kind string `json:"kind"`
+}
+
+type Coin struct {
+	Symbol   string `json:"symbol"`
+	Decimals int64  `json:"decimals"`
+}
+
+type Token struct {
+	// The token's contract, in lower case: what a payment names as its asset.
+	Contract string `json:"contract"`
+	Symbol   string `json:"symbol"`
+	// Null until the contract has been read.
+	Decimals *int `json:"decimals"`
+}
+
 // GetMe: Who this key is.
 //
 // The key's name, its organisation and whether that is Test or Live, and the permissions the key
@@ -238,6 +514,8 @@ func (c *Client) GetMe(ctx context.Context) (Me, Meta, error) {
 
 // ListVaultsParams narrows ListVaults. A zero field is not sent.
 type ListVaultsParams struct {
+	// Only the vault with this reference, your own id for it.
+	Reference string
 	// Which page, from 1.
 	Page int64
 	// How many per page, at most 100. 25 when not given.
@@ -248,6 +526,9 @@ type ListVaultsParams struct {
 func (c *Client) ListVaults(ctx context.Context, params ListVaultsParams) (Page[Vault], error) {
 	path := "/v1/vaults"
 	query := url.Values{}
+	if params.Reference != "" {
+		query.Set("reference", params.Reference)
+	}
 	if params.Page != 0 {
 		query.Set("page", strconv.FormatInt(params.Page, 10))
 	}
@@ -259,6 +540,21 @@ func (c *Client) ListVaults(ctx context.Context, params ListVaultsParams) (Page[
 	meta, err := c.do(ctx, "GET", path, query, header, nil, &page.Items)
 	page.fill(meta)
 	return page, err
+}
+
+// CreateVault: Open a vault, or have back the one with this reference.
+//
+// Opens a vault with an address on every network of your environment; nothing touches a network
+// until it is first paid out of. Give a reference, your own id such as your customer's, to open
+// one vault per customer: the same reference again answers that vault, 200, and the same reference
+// with a different name is refused 409. A new vault is answered 201.
+func (c *Client) CreateVault(ctx context.Context, body VaultRequest) (Vault, Meta, error) {
+	path := "/v1/vaults"
+	query := url.Values{}
+	header := http.Header{}
+	var data Vault
+	meta, err := c.do(ctx, "POST", path, query, header, body, &data)
+	return data, metaOf(meta), err
 }
 
 // GetVault: One vault and its addresses.
@@ -347,6 +643,8 @@ func (c *Client) ListDeposits(ctx context.Context, params ListDepositsParams) (P
 type ListPaymentsParams struct {
 	// Only this vault's.
 	Vault int64
+	// Only the payments you gave this reference.
+	Reference string
 	// Which page, from 1.
 	Page int64
 	// How many per page, at most 100. 25 when not given.
@@ -359,6 +657,9 @@ func (c *Client) ListPayments(ctx context.Context, params ListPaymentsParams) (P
 	query := url.Values{}
 	if params.Vault != 0 {
 		query.Set("vault", strconv.FormatInt(params.Vault, 10))
+	}
+	if params.Reference != "" {
+		query.Set("reference", params.Reference)
 	}
 	if params.Page != 0 {
 		query.Set("page", strconv.FormatInt(params.Page, 10))
@@ -437,6 +738,277 @@ func (c *Client) GetStatement(ctx context.Context, params GetStatementParams) ([
 	return file, metaOf(meta), err
 }
 
+// QuotePayment: What sending a payment now would come to, with nothing sent.
+//
+// Runs the checks sending runs, without recording, signing or announcing anything and without an
+// Idempotency-Key: what your payment rules say, whether the vault has the amount free, and the
+// most the network fee can cost at the network's price now, in the network's coin. A quote is not
+// a reservation: the payment is checked and priced again when it is sent, and the fee may differ.
+func (c *Client) QuotePayment(ctx context.Context, body PaymentRequest) (PaymentQuote, Meta, error) {
+	path := "/v1/payments/quote"
+	query := url.Values{}
+	header := http.Header{}
+	var data PaymentQuote
+	meta, err := c.do(ctx, "POST", path, query, header, body, &data)
+	return data, metaOf(meta), err
+}
+
+// SpeedUpPayment: Send a stuck payment again with a higher network fee.
+//
+// Only a payment that is stuck: one the network has not taken for 15 minutes, or keeps refusing.
+// It is sent again in its own place with a higher fee, paid from your gas pool. Any other payment
+// is refused 409. Answers the payment as it now stands.
+func (c *Client) SpeedUpPayment(ctx context.Context, id string) (Payment, Meta, error) {
+	path := "/v1/payments/" + url.PathEscape(id) + "/speed-up"
+	query := url.Values{}
+	header := http.Header{}
+	var data Payment
+	meta, err := c.do(ctx, "POST", path, query, header, nil, &data)
+	return data, metaOf(meta), err
+}
+
+// CancelPayment: Stop a stuck payment.
+//
+// Only a payment that is stuck. A transaction that moves nothing is sent in its place, its fee
+// paid from your gas pool; if the network takes the payment first, the payment goes through.
+// Answers the payment as it now stands; follow it to failed or confirmed.
+func (c *Client) CancelPayment(ctx context.Context, id string) (Payment, Meta, error) {
+	path := "/v1/payments/" + url.PathEscape(id) + "/cancel"
+	query := url.Values{}
+	header := http.Header{}
+	var data Payment
+	meta, err := c.do(ctx, "POST", path, query, header, nil, &data)
+	return data, metaOf(meta), err
+}
+
+// ListWebhookEvents: The kinds of event a webhook can be sent.
+func (c *Client) ListWebhookEvents(ctx context.Context) ([]WebhookEventType, Meta, error) {
+	path := "/v1/webhook-events"
+	query := url.Values{}
+	header := http.Header{}
+	var data []WebhookEventType
+	meta, err := c.do(ctx, "GET", path, query, header, nil, &data)
+	return data, metaOf(meta), err
+}
+
+// ListWebhooksParams narrows ListWebhooks. A zero field is not sent.
+type ListWebhooksParams struct {
+	// Which page, from 1.
+	Page int64
+	// How many per page, at most 100. 25 when not given.
+	PageSize int64
+}
+
+// ListWebhooks: Your webhooks.
+func (c *Client) ListWebhooks(ctx context.Context, params ListWebhooksParams) (Page[Webhook], error) {
+	path := "/v1/webhooks"
+	query := url.Values{}
+	if params.Page != 0 {
+		query.Set("page", strconv.FormatInt(params.Page, 10))
+	}
+	if params.PageSize != 0 {
+		query.Set("page_size", strconv.FormatInt(params.PageSize, 10))
+	}
+	header := http.Header{}
+	var page Page[Webhook]
+	meta, err := c.do(ctx, "GET", path, query, header, nil, &page.Items)
+	page.fill(meta)
+	return page, err
+}
+
+// CreateWebhook: Add a webhook; its signing secret is in this answer only.
+//
+// Sotirea sends each event you choose to the address, signed to the Standard Webhooks
+// specification with the secret in this answer, which is never shown again. Keep it beside the
+// key, on your server.
+func (c *Client) CreateWebhook(ctx context.Context, body WebhookRequest) (NewWebhook, Meta, error) {
+	path := "/v1/webhooks"
+	query := url.Values{}
+	header := http.Header{}
+	var data NewWebhook
+	meta, err := c.do(ctx, "POST", path, query, header, body, &data)
+	return data, metaOf(meta), err
+}
+
+// GetWebhook: One webhook and its recent deliveries.
+func (c *Client) GetWebhook(ctx context.Context, id int64) (WebhookDetail, Meta, error) {
+	path := "/v1/webhooks/" + strconv.FormatInt(id, 10)
+	query := url.Values{}
+	header := http.Header{}
+	var data WebhookDetail
+	meta, err := c.do(ctx, "GET", path, query, header, nil, &data)
+	return data, metaOf(meta), err
+}
+
+// DeleteWebhook: Stop sending to a webhook and remove it.
+func (c *Client) DeleteWebhook(ctx context.Context, id int64) (Done, Meta, error) {
+	path := "/v1/webhooks/" + strconv.FormatInt(id, 10)
+	query := url.Values{}
+	header := http.Header{}
+	var data Done
+	meta, err := c.do(ctx, "DELETE", path, query, header, nil, &data)
+	return data, metaOf(meta), err
+}
+
+// EnableWebhook: Turn a webhook Sotirea turned off back on.
+//
+// Sotirea turns a webhook off once every delivery to it has failed for 3 days and at least 10
+// attempts. Turning it on starts a clean run; deliveries given up can then be resent.
+func (c *Client) EnableWebhook(ctx context.Context, id int64) (Done, Meta, error) {
+	path := "/v1/webhooks/" + strconv.FormatInt(id, 10) + "/enable"
+	query := url.Values{}
+	header := http.Header{}
+	var data Done
+	meta, err := c.do(ctx, "POST", path, query, header, nil, &data)
+	return data, metaOf(meta), err
+}
+
+// RollWebhookSecret: Give a webhook a new signing secret.
+//
+// The new secret is in this answer only. Deliveries are signed with both the new and the old
+// secret for the grace you choose, so you can move across without a gap.
+func (c *Client) RollWebhookSecret(ctx context.Context, id int64, body WebhookSecretRequest) (NewWebhook, Meta, error) {
+	path := "/v1/webhooks/" + strconv.FormatInt(id, 10) + "/secret"
+	query := url.Values{}
+	header := http.Header{}
+	var data NewWebhook
+	meta, err := c.do(ctx, "POST", path, query, header, body, &data)
+	return data, metaOf(meta), err
+}
+
+// ResendWebhookDelivery: Send one delivery again.
+//
+// Sends the same event, with the same webhook-id, so your handler can tell it is the one it may
+// already have.
+func (c *Client) ResendWebhookDelivery(ctx context.Context, id int64, delivery int64) (Done, Meta, error) {
+	path := "/v1/webhooks/" + strconv.FormatInt(id, 10) + "/deliveries/" + strconv.FormatInt(delivery, 10) + "/resend"
+	query := url.Values{}
+	header := http.Header{}
+	var data Done
+	meta, err := c.do(ctx, "POST", path, query, header, nil, &data)
+	return data, metaOf(meta), err
+}
+
+// ListRules: Your organisation's payment rules.
+//
+// The rules every payment is checked against before it is priced, as people in your organisation
+// set them in the console. A rule for one network and asset wins over a general one.
+func (c *Client) ListRules(ctx context.Context) ([]Rule, Meta, error) {
+	path := "/v1/rules"
+	query := url.Values{}
+	header := http.Header{}
+	var data []Rule
+	meta, err := c.do(ctx, "GET", path, query, header, nil, &data)
+	return data, metaOf(meta), err
+}
+
+// ListApprovedAddresses: Your organisation's approved addresses.
+func (c *Client) ListApprovedAddresses(ctx context.Context) ([]ApprovedAddress, Meta, error) {
+	path := "/v1/approved-addresses"
+	query := url.Values{}
+	header := http.Header{}
+	var data []ApprovedAddress
+	meta, err := c.do(ctx, "GET", path, query, header, nil, &data)
+	return data, metaOf(meta), err
+}
+
+// ApproveAddress: Add an address to the approved list.
+//
+// As in the console: a newly approved address may be paid only after the wait your rules set, and
+// the people who manage your rules are emailed. Answers the whole list.
+func (c *Client) ApproveAddress(ctx context.Context, body ApprovedAddressRequest) ([]ApprovedAddress, Meta, error) {
+	path := "/v1/approved-addresses"
+	query := url.Values{}
+	header := http.Header{}
+	var data []ApprovedAddress
+	meta, err := c.do(ctx, "POST", path, query, header, body, &data)
+	return data, metaOf(meta), err
+}
+
+// RemoveApprovedAddressParams narrows RemoveApprovedAddress. A zero field is not sent.
+type RemoveApprovedAddressParams struct {
+	// The address to remove.
+	Address string
+	// Its network, or none for an address approved on every network.
+	Network string
+}
+
+// RemoveApprovedAddress: Take an address off the approved list.
+func (c *Client) RemoveApprovedAddress(ctx context.Context, params RemoveApprovedAddressParams) ([]ApprovedAddress, Meta, error) {
+	path := "/v1/approved-addresses"
+	query := url.Values{}
+	if params.Address != "" {
+		query.Set("address", params.Address)
+	}
+	if params.Network != "" {
+		query.Set("network", params.Network)
+	}
+	header := http.Header{}
+	var data []ApprovedAddress
+	meta, err := c.do(ctx, "DELETE", path, query, header, nil, &data)
+	return data, metaOf(meta), err
+}
+
+// RefreshVault: Ask the networks again what a vault holds.
+//
+// Each network the vault is on is asked again what reached and left it, through the same path as
+// every deposit, so anything missed is found and counted; nothing is ever written to a balance any
+// other way. Answers 202 at once, one refresh per network; follow each with GET
+// /v1/refreshes/{id}.
+func (c *Client) RefreshVault(ctx context.Context, id int64) ([]Refresh, Meta, error) {
+	path := "/v1/vaults/" + strconv.FormatInt(id, 10) + "/refresh"
+	query := url.Values{}
+	header := http.Header{}
+	var data []Refresh
+	meta, err := c.do(ctx, "POST", path, query, header, nil, &data)
+	return data, metaOf(meta), err
+}
+
+// GetRefresh: How a refresh went.
+func (c *Client) GetRefresh(ctx context.Context, id string) (Refresh, Meta, error) {
+	path := "/v1/refreshes/" + url.PathEscape(id)
+	query := url.Values{}
+	header := http.Header{}
+	var data Refresh
+	meta, err := c.do(ctx, "GET", path, query, header, nil, &data)
+	return data, metaOf(meta), err
+}
+
+// ListAuditParams narrows ListAudit. A zero field is not sent.
+type ListAuditParams struct {
+	// Only one kind: payments, rules, vaults, people, access, sign_in, go_live or developers.
+	Category string
+	// Only what this person or API key did, by their id.
+	Person int64
+	// Which page, from 1.
+	Page int64
+	// How many per page, at most 100. 25 when not given.
+	PageSize int64
+}
+
+// ListAudit: Your organisation's audit trail, newest first.
+func (c *Client) ListAudit(ctx context.Context, params ListAuditParams) (Page[AuditEntry], error) {
+	path := "/v1/audit"
+	query := url.Values{}
+	if params.Category != "" {
+		query.Set("category", params.Category)
+	}
+	if params.Person != 0 {
+		query.Set("person", strconv.FormatInt(params.Person, 10))
+	}
+	if params.Page != 0 {
+		query.Set("page", strconv.FormatInt(params.Page, 10))
+	}
+	if params.PageSize != 0 {
+		query.Set("page_size", strconv.FormatInt(params.PageSize, 10))
+	}
+	header := http.Header{}
+	var page Page[AuditEntry]
+	meta, err := c.do(ctx, "GET", path, query, header, nil, &page.Items)
+	page.fill(meta)
+	return page, err
+}
+
 // ListGasPools: The coin set aside to pay network fees, on each network.
 //
 // Sotirea pays every payment's network fee from your gas pool on that network, never from the
@@ -446,6 +1018,44 @@ func (c *Client) ListGasPools(ctx context.Context) ([]GasPool, Meta, error) {
 	query := url.Values{}
 	header := http.Header{}
 	var data []GasPool
+	meta, err := c.do(ctx, "GET", path, query, header, nil, &data)
+	return data, metaOf(meta), err
+}
+
+// CheckAddressParams narrows CheckAddress. A zero field is not sent.
+type CheckAddressParams struct {
+	// The network, by its CAIP-2 id, like eip155:1.
+	Network string
+}
+
+// CheckAddress: What is known about an address before you pay it.
+//
+// Reads what your payment rules will read about an address on one network, without sending
+// anything: whether it is a valid address, whether your organisation has paid it before, whether
+// it is approved and from when it may be paid, whether it looks like an address you have paid or
+// approved without being it, and whether it is a contract. Show it to the person about to pay.
+func (c *Client) CheckAddress(ctx context.Context, address string, params CheckAddressParams) (AddressCheck, Meta, error) {
+	path := "/v1/addresses/" + url.PathEscape(address)
+	query := url.Values{}
+	if params.Network != "" {
+		query.Set("network", params.Network)
+	}
+	header := http.Header{}
+	var data AddressCheck
+	meta, err := c.do(ctx, "GET", path, query, header, nil, &data)
+	return data, metaOf(meta), err
+}
+
+// ListNetworks: The networks your organisation can use.
+//
+// Every network of your key's environment that Sotirea runs: its CAIP-2 id, its coin, how long a
+// movement takes to be final there, the tokens Sotirea recognises on it, and whether payments are
+// open there now.
+func (c *Client) ListNetworks(ctx context.Context) ([]Network, Meta, error) {
+	path := "/v1/networks"
+	query := url.Values{}
+	header := http.Header{}
+	var data []Network
 	meta, err := c.do(ctx, "GET", path, query, header, nil, &data)
 	return data, metaOf(meta), err
 }

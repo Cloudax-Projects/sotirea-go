@@ -9,13 +9,24 @@ import sotirea "sotirea.com/sdk/go"
 
 client := sotirea.New(os.Getenv("SOTIREA_API"), os.Getenv("SOTIREA_API_KEY"))
 
-me, _, err := client.GetMe(ctx)                    // who the key is, and test or live
-vaults, err := client.ListVaults(ctx, sotirea.ListVaultsParams{})
-payment, meta, err := client.SendPayment(ctx, "order-1001", sotirea.PaymentRequest{
-	VaultID: vaults.Items[0].ID, To: "0x...", Amount: "1000000000000000",
-})
-payment, _, err = client.GetPayment(ctx, payment.ID)
+me, _, err := client.GetMe(ctx) // who the key is, and test or live
+
+// One vault per customer: the same reference always answers the same vault.
+vault, _, err := client.CreateVault(ctx, sotirea.VaultRequest{Reference: "cust_1001"})
+
+// What sending would come to, with nothing sent: the rules' answer and the fee ceiling.
+pay := sotirea.PaymentRequest{VaultID: vault.ID, To: "0x...", Amount: "1000000000000000", Reference: "payout-42"}
+quote, _, err := client.QuotePayment(ctx, pay)
+if quote.Outcome == "allowed" && quote.GasPoolCovers {
+	// The Idempotency-Key names this payment: sending it again never pays twice.
+	payment, meta, err := client.SendPayment(ctx, "payout-42", pay)
+	// Follow it with client.GetPayment(ctx, payment.ID), or by webhook.
+}
 ```
+
+`ListNetworks` says which networks your organisation can use, `CheckAddress` what is known about
+an address before you pay it, and the rest of the API, webhooks, rules, approved addresses,
+refreshes and the audit trail included, has a method each.
 
 A single object comes with a `Meta` whose `RequestID` is the one to quote when asking Sotirea about
 the request; a list's `Page` carries its own `RequestID`.
