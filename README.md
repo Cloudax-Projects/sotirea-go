@@ -25,8 +25,10 @@ if quote.Outcome == "allowed" && quote.GasPoolCovers {
 ```
 
 `ListNetworks` says which networks your organisation can use, `CheckAddress` what is known about
-an address before you pay it, and the rest of the API, webhooks, rules, approved addresses,
-refreshes and the audit trail included, has a method each.
+an address before you pay it, and the rest of the API, webhooks, rules, approved addresses, sweeps,
+refreshes and the audit trail included, has a method each. A payment's `Purpose` is `sweep` when one
+of your sweeps sent it, and a deposit with `Sweep` true is your own money arriving from one: do not
+credit a customer for it.
 
 A single object comes with a `Meta` whose `RequestID` is the one to quote when asking Sotirea about
 the request; a list's `Page` carries its own `RequestID`.

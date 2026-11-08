@@ -39,6 +39,9 @@ type Event struct {
 type PaymentEvent struct {
 	Object string `json:"object"`
 	ID     string `json:"id"`
+	// payment, asked for by a person or a key; or sweep, sent by one of your sweep rules from a
+	// deposit vault into one of your own vaults.
+	Purpose string `json:"purpose"`
 	// awaiting_approval, sent, confirmed, failed or stuck.
 	Status  string `json:"status"`
 	VaultID *int64 `json:"vault_id"`
@@ -69,6 +72,9 @@ type DepositEvent struct {
 	Amount  string `json:"amount"`
 	// Your own id for the vault it arrived in, or null.
 	VaultReference *string `json:"vault_reference"`
+	// Whether one of your sweep rules moved it here from another of your vaults, rather than somebody
+	// paying you.
+	Sweep bool `json:"sweep"`
 }
 
 type GasPoolEvent struct {
@@ -114,6 +120,9 @@ type Balance struct {
 	// True for the network's coin and for tokens on Sotirea's recognised list. Any other token's
 	// symbol is whatever its contract calls itself, so do not trust it by name.
 	Recognised bool `json:"recognised"`
+	// The network or asset is not available right now. What is held is still yours and deposits are
+	// still credited; it cannot be sent until it is available again.
+	Paused bool `json:"paused"`
 	// How to scale an amount for a person. Null for a token whose contract has not been read yet.
 	Decimals *int `json:"decimals"`
 	// Final, in the asset's smallest unit.
@@ -137,17 +146,22 @@ type Deposit struct {
 	VaultName *string `json:"vault_name"`
 	// Your own id for the vault it arrived in, or null.
 	VaultReference *string `json:"vault_reference"`
-	ChainID        string  `json:"chain_id"`
-	ChainName      string  `json:"chain_name"`
-	TxHash         string  `json:"tx_hash"`
-	From           string  `json:"from"`
-	To             string  `json:"to"`
-	Asset          string  `json:"asset"`
-	Symbol         string  `json:"symbol"`
+	// Whether one of your sweep rules moved it here from another of your vaults, rather than somebody
+	// paying you. Do not credit a customer for it.
+	Sweep     bool   `json:"sweep"`
+	ChainID   string `json:"chain_id"`
+	ChainName string `json:"chain_name"`
+	TxHash    string `json:"tx_hash"`
+	From      string `json:"from"`
+	To        string `json:"to"`
+	Asset     string `json:"asset"`
+	Symbol    string `json:"symbol"`
 	// True for the network's coin and for tokens on Sotirea's recognised list. Any other token's
 	// symbol is whatever its contract calls itself, so do not trust it by name.
 	Recognised bool `json:"recognised"`
-	Decimals   *int `json:"decimals"`
+	// The network or asset is not available right now. The deposit is still credited.
+	Paused   bool `json:"paused"`
+	Decimals *int `json:"decimals"`
 	// In the asset's smallest unit.
 	Amount string    `json:"amount"`
 	SeenAt time.Time `json:"seen_at"`
@@ -160,6 +174,9 @@ type Payment struct {
 	ID string `json:"id"`
 	// Your own id for the payment, as you gave it, or null.
 	Reference *string `json:"reference"`
+	// payment, asked for by a person or a key; or sweep, sent by one of your sweep rules from a
+	// deposit vault into one of your own vaults.
+	Purpose string `json:"purpose"`
 	// requested, awaiting_approval, awaiting_gas, signed, sent, confirmed, failed or stuck. New
 	// statuses may be added: treat one you do not know as still in progress.
 	Status    string `json:"status"`
@@ -174,7 +191,10 @@ type Payment struct {
 	// True for the network's coin and for tokens on Sotirea's recognised list. Any other token's
 	// symbol is whatever its contract calls itself, so do not trust it by name.
 	Recognised bool `json:"recognised"`
-	Decimals   *int `json:"decimals"`
+	// The network or asset is not available right now: a payment waiting cannot be approved or sent
+	// until it is. One already sent is still followed to the end.
+	Paused   bool `json:"paused"`
+	Decimals *int `json:"decimals"`
 	// In the asset's smallest unit.
 	Amount string `json:"amount"`
 	// How many people must agree before it is sent; 0 when it needs no approval.
@@ -331,6 +351,74 @@ type Rule struct {
 	NewAddressWaitSeconds int64 `json:"new_address_wait_seconds"`
 }
 
+type Sweep struct {
+	ID        int64  `json:"id"`
+	ChainID   string `json:"chain_id"`
+	ChainName string `json:"chain_name"`
+	// native, or a token's contract.
+	Asset  string `json:"asset"`
+	Symbol string `json:"symbol"`
+	// The asset's decimals; absent for a token whose contract has not been read.
+	Decimals             int    `json:"decimals,omitempty"`
+	DestinationVaultID   int64  `json:"destination_vault_id"`
+	DestinationVaultName string `json:"destination_vault_name"`
+	// The least a vault must hold free before it is swept, in the asset's smallest unit.
+	MinAmount string `json:"min_amount"`
+	// The most one sweep may cost in network fees, in the network coin's smallest unit.
+	FeeCeiling string `json:"fee_ceiling"`
+	// The network's coin, which pays the fees.
+	CoinSymbol   string `json:"coin_symbol"`
+	CoinDecimals int    `json:"coin_decimals"`
+	// Whether it sweeps every vault opened with a reference: each customer's deposit vault, including
+	// those opened later.
+	EveryReferencedVault bool `json:"every_referenced_vault"`
+	// The vaults it sweeps when it names them; empty when it sweeps every vault opened with a
+	// reference. Never the destination.
+	SourceVaults []SweepVault `json:"source_vaults"`
+	// active, proposed (waiting for a second person), declined or retired.
+	State string `json:"state"`
+	// The rule a proposal changes or retires.
+	ReplacesID int64 `json:"replaces_id,omitempty"`
+	// A proposal to stop the rule it replaces.
+	Retire bool `json:"retire"`
+	// The person's name, or the API key's when a key proposed it.
+	ProposedBy string `json:"proposed_by"`
+	// Whether an API key proposed it. Nobody who has held that key's secret may confirm it.
+	ProposedByAPIKey bool       `json:"proposed_by_api_key"`
+	ProposedAt       time.Time  `json:"proposed_at"`
+	DecidedBy        string     `json:"decided_by,omitempty"`
+	DecidedAt        *time.Time `json:"decided_at"`
+	// Confirmed by its proposer alone, because nobody else in your organisation manages sweeps.
+	SoleManager bool `json:"sole_manager"`
+	// An active rule's last run; null until it first runs, within 15 minutes of becoming active.
+	LastRun *SweepRun `json:"last_run"`
+}
+
+type SweepFee struct {
+	// In the network coin's smallest unit; null when there is no vault to sweep yet.
+	Fee *string `json:"fee"`
+	// Whether that price includes creating the vault's Safe, which its first payment or sweep does;
+	// later sweeps cost less.
+	IncludesVaultCreation bool `json:"includes_vault_creation"`
+}
+
+type SweepRequest struct {
+	// The network, like eip155:1.
+	ChainID string `json:"chain_id"`
+	// native, the default, or a token's contract.
+	Asset string `json:"asset,omitempty"`
+	// One of your own vaults on the network: sweeps go into it.
+	DestinationVaultID int64 `json:"destination_vault_id"`
+	// The least a vault must hold free before it is swept, in the asset's smallest unit.
+	MinAmount string `json:"min_amount"`
+	// The most one sweep may cost in network fees, in the network coin's smallest unit. GET
+	// /v1/sweeps/fee says what one costs now.
+	FeeCeiling string `json:"fee_ceiling"`
+	// The vaults to sweep; leave it out for every vault opened with a reference, including those
+	// opened later.
+	SourceVaultIDs []int64 `json:"source_vault_ids,omitempty"`
+}
+
 type ApprovedAddress struct {
 	// The network, or empty for every network.
 	ChainID string `json:"chain_id"`
@@ -390,6 +478,9 @@ type GasPool struct {
 	// The level below which your organisation is warned; 0 is off.
 	LowBalance string `json:"low_balance"`
 	Low        bool   `json:"low"`
+	// The network is not available right now: the pool keeps what it holds and still warns when low,
+	// but no payment is sent there until it is.
+	Paused bool `json:"paused"`
 }
 
 type AddressCheck struct {
@@ -452,6 +543,9 @@ type VaultAddress struct {
 	ChainID   string `json:"chain_id"`
 	ChainName string `json:"chain_name"`
 	Address   string `json:"address"`
+	// The network is not available right now: money sent here is still credited, but do not show this
+	// address to be paid until it is available again.
+	Paused bool `json:"paused"`
 }
 
 type WebhookDelivery struct {
@@ -469,6 +563,22 @@ type WebhookDelivery struct {
 	LastAttemptAt *time.Time `json:"last_attempt_at"`
 	DeliveredAt   *time.Time `json:"delivered_at"`
 	CreatedAt     time.Time  `json:"created_at"`
+}
+
+type SweepVault struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+type SweepRun struct {
+	At time.Time `json:"at"`
+	// swept; nothing (no vault held the minimum); skipped (every sweep worth making was held back: the
+	// fee above the ceiling, or the gas pool unable to pay); or failed.
+	Outcome string `json:"outcome"`
+	// What happened, vault by vault, in words.
+	Detail string `json:"detail,omitempty"`
+	// When the current run of skips began. After a day, the people who manage sweeps are emailed once.
+	SkippedSince time.Time `json:"skipped_since,omitempty"`
 }
 
 type AuditActor struct {
@@ -619,7 +729,9 @@ type ListDepositsParams struct {
 // ListDeposits: Money that came in, newest first.
 //
 // A deposit is "arriving" from the moment it is seen on the network and "received" once final,
-// when it is added to the vault's available balance.
+// when it is added to the vault's available balance. One with sweep true is one of your sweeps
+// moving your own money into one of your vaults, not somebody paying you: do not credit a customer
+// for it.
 func (c *Client) ListDeposits(ctx context.Context, params ListDepositsParams) (Page[Deposit], error) {
 	path := "/v1/deposits"
 	query := url.Values{}
@@ -652,6 +764,9 @@ type ListPaymentsParams struct {
 }
 
 // ListPayments: Payments out of your vaults, newest first.
+//
+// Each has a purpose: payment, asked for by a person or a key, or sweep, sent by one of your
+// sweeps from a deposit vault into one of your own vaults (GET /v1/sweeps).
 func (c *Client) ListPayments(ctx context.Context, params ListPaymentsParams) (Page[Payment], error) {
 	path := "/v1/payments"
 	query := url.Values{}
@@ -715,12 +830,12 @@ type GetStatementParams struct {
 // GetStatement: A statement for a period, as CSV.
 //
 // For each asset: the opening balance, every movement made final in the period (received, sent,
-// network_fee) and the closing balance, read from the ledger in one snapshot, so opening plus the
-// movements is the closing balance exactly. Columns: row (opening, movement or closing), network,
-// chain_id, asset, symbol, recognised, decimals, at, kind, account, amount, amount_base_units,
-// tx_hash, counterparty, reference (the payment's id), posting_id, journal_id. Amounts are exact
-// decimals beside their base units; times are UTC. A period is at most 366 days and 100,000
-// movements.
+// network_fee, sweep) and the closing balance, read from the ledger in one snapshot, so opening
+// plus the movements is the closing balance exactly. Columns: row (opening, movement or closing),
+// network, chain_id, asset, symbol, recognised, decimals, at, kind, account, amount,
+// amount_base_units, tx_hash, counterparty, reference (the payment's id), posting_id, journal_id.
+// Amounts are exact decimals beside their base units; times are UTC. A period is at most 366 days
+// and 100,000 movements.
 func (c *Client) GetStatement(ctx context.Context, params GetStatementParams) ([]byte, Meta, error) {
 	path := "/v1/statement"
 	query := url.Values{}
@@ -902,6 +1017,102 @@ func (c *Client) ListRules(ctx context.Context) ([]Rule, Meta, error) {
 	return data, metaOf(meta), err
 }
 
+// ListSweeps: Your organisation's sweeps, with how each last ran.
+//
+// Each sweep gathers what your customers' deposit vaults hold free into one of your own vaults,
+// every 15 minutes: every vault opened with a reference, or the vaults it names, never the vault
+// it sweeps into. A vault is swept once it holds the minimum, unless one sweep would cost more
+// than the fee ceiling or the gas pool cannot pay; then it waits. Lists active sweeps, proposals
+// waiting for a second person, and recent decisions. A sweep is a payment with purpose sweep; its
+// arrival is a deposit with sweep true, not a customer paying you.
+func (c *Client) ListSweeps(ctx context.Context) ([]Sweep, Meta, error) {
+	path := "/v1/sweeps"
+	query := url.Values{}
+	header := http.Header{}
+	var data []Sweep
+	meta, err := c.do(ctx, "GET", path, query, header, nil, &data)
+	return data, metaOf(meta), err
+}
+
+// GetSweepFeeParams narrows GetSweepFee. A zero field is not sent.
+type GetSweepFeeParams struct {
+	// The network, like eip155:1.
+	Network string
+	// native, the default, or a token's contract.
+	Asset string
+	// The vault sweeps go into.
+	DestinationVaultID int64
+	// The vaults to sweep, by id, separated by commas; leave it out for every vault opened with a
+	// reference.
+	SourceVaultIds string
+}
+
+// GetSweepFee: What one sweep would cost now.
+//
+// Priced as a sweep would be sent, on the first vault the sweep would take from, so a fee ceiling
+// can be set beside it. Nothing is recorded.
+func (c *Client) GetSweepFee(ctx context.Context, params GetSweepFeeParams) (SweepFee, Meta, error) {
+	path := "/v1/sweeps/fee"
+	query := url.Values{}
+	if params.Network != "" {
+		query.Set("network", params.Network)
+	}
+	if params.Asset != "" {
+		query.Set("asset", params.Asset)
+	}
+	if params.DestinationVaultID != 0 {
+		query.Set("destination_vault_id", strconv.FormatInt(params.DestinationVaultID, 10))
+	}
+	if params.SourceVaultIds != "" {
+		query.Set("source_vault_ids", params.SourceVaultIds)
+	}
+	header := http.Header{}
+	var data SweepFee
+	meta, err := c.do(ctx, "GET", path, query, header, nil, &data)
+	return data, metaOf(meta), err
+}
+
+// ProposeSweep: Propose a sweep, or a change to one.
+//
+// A sweep moves money, so it takes effect once a person who manages sweeps confirms it in the
+// console; an API key never confirms. Nobody who has held this key's secret may confirm it, and
+// where nobody else could, the proposal is refused (403, fields.rule four_eyes). A proposal for a
+// network and asset that already has a sweep is a change to it; one proposal waits at a time
+// (409).
+func (c *Client) ProposeSweep(ctx context.Context, body SweepRequest) (Sweep, Meta, error) {
+	path := "/v1/sweeps"
+	query := url.Values{}
+	header := http.Header{}
+	var data Sweep
+	meta, err := c.do(ctx, "POST", path, query, header, body, &data)
+	return data, metaOf(meta), err
+}
+
+// StopSweep: Propose stopping a sweep.
+//
+// The sweep keeps running until a person who manages sweeps, and has never held this key's secret,
+// confirms in the console.
+func (c *Client) StopSweep(ctx context.Context, id int64) (Sweep, Meta, error) {
+	path := "/v1/sweeps/" + strconv.FormatInt(id, 10) + "/stop"
+	query := url.Values{}
+	header := http.Header{}
+	var data Sweep
+	meta, err := c.do(ctx, "POST", path, query, header, nil, &data)
+	return data, metaOf(meta), err
+}
+
+// WithdrawSweepProposal: Withdraw a proposal this key made.
+//
+// Only this key's own proposal: a person declines others in the console.
+func (c *Client) WithdrawSweepProposal(ctx context.Context, id int64) (Sweep, Meta, error) {
+	path := "/v1/sweeps/" + strconv.FormatInt(id, 10) + "/withdraw"
+	query := url.Values{}
+	header := http.Header{}
+	var data Sweep
+	meta, err := c.do(ctx, "POST", path, query, header, nil, &data)
+	return data, metaOf(meta), err
+}
+
 // ListApprovedAddresses: Your organisation's approved addresses.
 func (c *Client) ListApprovedAddresses(ctx context.Context) ([]ApprovedAddress, Meta, error) {
 	path := "/v1/approved-addresses"
@@ -1050,7 +1261,9 @@ func (c *Client) CheckAddress(ctx context.Context, address string, params CheckA
 //
 // Every network of your key's environment that Sotirea runs: its CAIP-2 id, its coin, how long a
 // movement takes to be final there, the tokens Sotirea recognises on it, and whether payments are
-// open there now.
+// open there now. A network or token that is not available right now is left out; what you hold
+// there still shows in your balances, marked paused, and a payment there is refused with
+// network_unavailable or asset_unavailable.
 func (c *Client) ListNetworks(ctx context.Context) ([]Network, Meta, error) {
 	path := "/v1/networks"
 	query := url.Values{}

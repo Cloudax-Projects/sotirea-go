@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.2.0
+
+Sweeps, and what changes when staff pause a network:
+
+- Sweeps: `ListSweeps`, each with the vaults it takes from, its minimum, its fee ceiling and how it
+  last ran (`LastRun`, nil until the first run); `GetSweepFee`, what one sweep costs now, for setting
+  the ceiling. With Manage sweeps a key proposes a sweep, a change or a stop (`ProposeSweep`,
+  `StopSweep`) and withdraws its own proposal (`WithdrawSweepProposal`). A person who manages sweeps
+  and has never held the key's secret confirms it in the console; a key never confirms.
+- Payments carry `Purpose`: `payment`, or `sweep` for one your sweeps sent between your own vaults.
+  Payment webhooks carry it too.
+- Deposits carry `Sweep`: true for money one of your sweeps brought into your own vault, which is
+  not somebody paying you. Deposit webhooks carry it too.
+- Balances, deposits and payments carry `Paused`: true while the network or token is not available.
+  What is held is still yours and deposits are still credited; nothing is sent from it, and a
+  payment waiting cannot be approved, until it is available again. One already sent is followed to
+  the end. Vaults' addresses and gas pools say so too.
+
 ## v1.1.0
 
 Everything an integration does in the console, now over the API:
