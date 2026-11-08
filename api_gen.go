@@ -75,6 +75,9 @@ type DepositEvent struct {
 	// Whether one of your sweep rules moved it here from another of your vaults, rather than somebody
 	// paying you.
 	Sweep bool `json:"sweep"`
+	// Whether it is held for a compliance review: credited, but not spendable until Sotirea releases
+	// it. Sotirea will contact you.
+	Held bool `json:"held"`
 }
 
 type GasPoolEvent struct {
@@ -134,7 +137,10 @@ type Balance struct {
 	// Promised to payments already accepted.
 	Reserved string `json:"reserved"`
 	// What a new payment may use. Show this as what can be sent.
-	Spendable string    `json:"spendable"`
+	Spendable string `json:"spendable"`
+	// Held for a compliance review: counted in available, not spendable until Sotirea releases it.
+	// Sotirea will contact you.
+	Held      string    `json:"held"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
@@ -504,6 +510,8 @@ type AddressCheck struct {
 	LookalikeOf *Lookalike `json:"lookalike_of"`
 	// Whether the address is a contract on this network.
 	HoldsCode bool `json:"holds_code"`
+	// Whether a sanctions list or Sotirea's blocked list names it: a payment to it is refused.
+	Listed bool `json:"listed"`
 }
 
 type Network struct {

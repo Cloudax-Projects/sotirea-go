@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.3.0
+
+Sanctions screening:
+
+- Every address you pay is checked against OFAC's sanctions list and Sotirea's own blocked list,
+  before your payment rules. A payment to a listed address is refused, 403, and `Rule()` is
+  `sanctioned_address` or `blocked_destination`; a quote says `refused` with the same `Rule`, and
+  `ApproveAddress` refuses one, 400, with the same rule. A payment waiting for approval whose
+  address is listed meanwhile fails, and its money is released.
+- `CheckAddress` carries `Listed`: true when a list names the address. Which entry is never shown.
+- Balances carry `Held`: deposits from a listed address held for a compliance review, counted in
+  `Available` and never in `Spendable`. Sotirea will contact you. Paying out of held money is
+  refused with `Rule()` `insufficient_balance`.
+- `deposit.received` webhooks carry `Held`: true for a deposit held for review.
+
 ## v1.2.0
 
 Sweeps, and what changes when staff pause a network:

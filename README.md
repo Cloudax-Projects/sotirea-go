@@ -28,7 +28,9 @@ if quote.Outcome == "allowed" && quote.GasPoolCovers {
 an address before you pay it, and the rest of the API, webhooks, rules, approved addresses, sweeps,
 refreshes and the audit trail included, has a method each. A payment's `Purpose` is `sweep` when one
 of your sweeps sent it, and a deposit with `Sweep` true is your own money arriving from one: do not
-credit a customer for it.
+credit a customer for it. `CheckAddress` says `Listed` when a sanctions list or Sotirea's blocked
+list names an address, and paying it is refused with `Rule()` `sanctioned_address` or
+`blocked_destination`; a balance's `Held` is a deposit from such an address, held for review.
 
 A single object comes with a `Meta` whose `RequestID` is the one to quote when asking Sotirea about
 the request; a list's `Page` carries its own `RequestID`.
